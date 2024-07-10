@@ -34,7 +34,7 @@ def remove_background_view(request):
         image_path = uploaded_image.original_image.path
         result = remove_background(image_path, model)
 
-        processed_image_path = f'processed_image_{uploaded_image.id}.png'
+        processed_image_path = f'media/processed/processed_image_{uploaded_image.id}.png'
         cv2.imwrite(processed_image_path, result)
         
         # Update the processed_image field and save
