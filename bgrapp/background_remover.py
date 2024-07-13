@@ -1,10 +1,11 @@
 import torch
 import torchvision.transforms as T
-import cv2
-import numpy as np
 from torchvision.models.detection import maskrcnn_resnet50_fpn
 from torchvision.models.detection.mask_rcnn import MaskRCNN_ResNet50_FPN_Weights
 import os
+import cv2
+import numpy as np
+from PIL import Image
 
 os.environ['TORCH_HOME'] = 'D:/DyroDev/bgremover_project/cache/torch'
 
@@ -13,96 +14,47 @@ def load_model():
     model.eval()
     return model
 
-def remove_background(image_path, model):
+def remove_background(image_path, model, threshold=0.1):
     # Load the image
-    image = cv2.imread(image_path)
-    if image is None:
-        raise ValueError(f"Image not found or unable to load: {image_path}")
-    print(f"Image loaded: {image.shape}")
+    image = Image.open(image_path).convert("RGB")
+    print(f"Image loaded: {np.array(image).shape}")
 
-    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    # Define the transformation
+    transform = T.Compose([T.ToTensor()])
 
     # Transform the image
-    transform = T.Compose([T.ToTensor()])
-    try:
-        image_tensor = transform(image_rgb).unsqueeze(0)
-        print(f"Image transformed: {image_tensor.shape}")
-    except Exception as e:
-        print(f"Error during transformation: {e}")
-        raise
+    transformed_image = transform(image).unsqueeze(0)
+    print(f"Image transformed: {transformed_image.shape}")
 
-    # Perform object detection
+    # Move to GPU if available
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model.to(device)
+    transformed_image = transformed_image.to(device)
+
+    # Get the model outputs
     with torch.no_grad():
-        outputs = model(image_tensor)
-        print(f"Model outputs: {outputs}")
+        outputs = model(transformed_image)
 
-    # Process the results
-    masks = outputs[0]['masks']
-    scores = outputs[0]['scores']
-    threshold = 0.5
-    mask = masks[scores > threshold][0]  # Select the first mask with score > threshold
-    mask = mask.squeeze().mul(255).byte().cpu().numpy()  # Ensure mask is 2-dimensional
-    print(f"Mask processed: {mask.shape}")
+    # Extract the masks, boxes, and scores
+    masks = outputs[0]['masks'].cpu()
+    scores = outputs[0]['scores'].cpu()
+    print(f"Model outputs: {outputs}")
 
-    # Create an alpha channel based on the mask
-    alpha = np.zeros((image_rgb.shape[0], image_rgb.shape[1]), dtype=np.uint8)
-    alpha[mask > 127] = 255  # Set alpha channel values based on mask
+    # Check if there are masks with scores above the threshold
+    if scores[scores > threshold].size(0) == 0:
+        raise ValueError("No masks with scores above the threshold were found.")
 
-    # Merge the image and the alpha channel
-    rgba = cv2.merge((image_rgb, alpha))
-    return rgba
+    # Select the first mask with score > threshold
+    mask = masks[scores > threshold][0]
 
+    # Convert the mask to a binary mask
+    binary_mask = mask.squeeze().numpy() > 0.5
 
+    # Apply the mask to the image
+    np_image = np.array(image)
+    np_image[~binary_mask] = 0
 
+    # Convert back to PIL Image
+    result_image = Image.fromarray(np_image)
 
-# import torch
-# import torchvision.transforms as T
-# import cv2
-# import numpy as np
-# from torchvision.models.detection import maskrcnn_resnet50_fpn
-# from torchvision.models.detection.mask_rcnn import MaskRCNN_ResNet50_FPN_Weights
-# import os
-# os.environ['TORCH_HOME'] = 'D:/DyroDev/bgremover_project/cache/torch'
-# def load_model():
-#     model = maskrcnn_resnet50_fpn(weights=MaskRCNN_ResNet50_FPN_Weights.COCO_V1)
-#     model.eval()
-#     return model
-
-# def remove_background(image_path, model):
-#     # Load the image
-#     image = cv2.imread(image_path)
-#     if image is None:
-#         raise ValueError(f"Image not found or unable to load: {image_path}")
-#     print(f"Image loaded: {image.shape}")
-
-#     image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-
-#     # Transform the image
-#     transform = T.Compose([T.ToTensor()])
-#     try:
-#         image_tensor = transform(image_rgb).unsqueeze(0)
-#         print(f"Image transformed: {image_tensor.shape}")
-#     except Exception as e:
-#         print(f"Error during transformation: {e}")
-#         raise
-
-#     # Perform object detection
-#     with torch.no_grad():
-#         outputs = model(image_tensor)
-#         print(f"Model outputs: {outputs}")
-
-#     # Process the results
-#     masks = outputs[0]['masks']
-#     scores = outputs[0]['scores']
-#     threshold = 0.5
-#     mask = masks[scores > threshold][0]
-#     mask = mask.mul(255).byte().cpu().numpy()
-#     print(f"Mask processed: {mask.shape}")
-
-#     # Create an alpha channel based on the mask
-#     alpha = np.zeros_like(image_rgb[:, :, 0])
-#     alpha[mask > 127] = 255
-
-#     # Merge the image and the alpha channel
-#     rgba = cv2.merge((image_rgb, alpha))
-#     return rgba
+    return result_image

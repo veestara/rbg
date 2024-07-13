@@ -78,9 +78,9 @@ WSGI_APPLICATION = 'bgremover.wsgi.application'
 DATABASES = {
      'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'remover1',
+        'NAME': 'bgrv8',
         'USER': 'postgres',
-        'PASSWORD': 'drg1232',
+        'PASSWORD': 'ankur123',
         'HOST': 'localhost',
         'PORT': '5432'
     }
